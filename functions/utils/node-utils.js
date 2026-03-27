@@ -9,7 +9,7 @@ import { extractNodeRegion, getRegionEmoji } from '../modules/utils/geo-utils.js
 /**
  * 节点协议正则表达式
  */
-export const NODE_PROTOCOL_REGEX = /^(ss|ssr|vmess|vless|trojan|hysteria2?|hy|hy2|tuic|anytls|socks5|socks|wireguard):\/\//g;
+export const NODE_PROTOCOL_REGEX = /^(ss|ssr|vmess|vless|trojan|hysteria2?|hy|hy2|tuic|snell|anytls|socks5|socks|wireguard):\/\//g;
 
 /**
  * 为节点名称添加前缀
@@ -236,6 +236,20 @@ export function fixNodeUrlEncoding(nodeUrl, options = {}) {
         });
 
         return normalizeFragment(nodeUrl);
+    }
+
+    // 1.1 Snell 参数兼容处理（移除 SubConverter 不识别的字段）
+    if (nodeUrl.startsWith('snell://')) {
+        try {
+            const urlObj = new URL(nodeUrl);
+            if (urlObj.searchParams.has('ecn')) {
+                urlObj.searchParams.delete('ecn');
+            }
+            const rebuilt = urlObj.toString();
+            return normalizeFragment(rebuilt);
+        } catch (e) {
+            return normalizeFragment(nodeUrl);
+        }
     }
 
     // 2. 其他协议的 Base64 修复逻辑

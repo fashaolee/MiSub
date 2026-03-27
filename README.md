@@ -77,6 +77,17 @@
   - 到期时间提醒,颜色高亮
   - 自动更新节点数和流量信息
 
+- **🛰️ VPS 探针**
+  - 节点状态与资源曲线监控
+  - 告警与通知联动
+  - 需要绑定 D1 数据库 (MISUB_DB)
+  - 需要在设置中切换存储模式为 D1
+  - 支持 ICMP/TCP/HTTP 网络监测（需执行最新 schema.sql）
+  - 公开页地址：`/vps/public`（如设置了公开页 Token，则需 `?token=xxx`）
+
+- **🚫 PWA 已移除**
+  - 已彻底禁用 PWA/Service Worker，避免缓存导致的白屏问题
+
 ### 💾 双重存储支持
 
 - **Cloudflare KV 存储**
@@ -103,7 +114,7 @@
 | 客户端 | 格式支持 | 自动识别 |
 |--------|---------|---------|
 | Clash / Clash Meta | ✅ | ✅ |
-| Sing-Box | ✅ | ✅ |
+| Sing-Box | ✅ (Base64) | ✅ |
 | Surge | ✅ | ✅ |
 | Shadowrocket | ✅ | ✅ |
 | V2rayN / V2rayNG | ✅ | ✅ |
@@ -176,6 +187,20 @@ wrangler d1 execute misub --file=schema.sql --remote
 ```
 
 > 💡 若无法初始化,可在 Cloudflare 控制台手动执行 `schema.sql`
+
+> ⚠️ VPS 探针功能必须绑定 D1 数据库 (MISUB_DB)，并在设置中切换存储模式为 D1，未满足将无法使用探针相关功能。
+> ⚠️ 若启用网络监测（ICMP/TCP/HTTP），需执行最新的 `schema.sql` 创建 vps_network_targets / vps_network_samples 表。
+> ⚠️ 已在使用 D1 的用户升级后也需要在 D1 控制台执行最新 `schema.sql`（新增 vps_network_targets / vps_network_samples 字段和表）。
+> ⚠️ VPS 探针新增了 `overload_state_json` 字段，升级后请执行最新 `schema.sql`。
+
+> ⚠️ PWA/Service Worker 已移除，升级后建议清理浏览器缓存与旧的 Service Worker。
+
+若已绑定 D1 并出现如下错误：
+`D1_ERROR: table vps_network_targets has no column named scheme`
+说明 D1 表结构未更新，请在 D1 控制台执行最新 `schema.sql`。
+
+> 💡 现在支持上报签名校验（HMAC），可在设置中开启，探针脚本会自动携带签名。
+> 💡 新增上报间隔与记录间隔配置，用于控制上报频率与历史写入密度。
 
 ### 3. 设置环境变量
 
@@ -340,6 +365,28 @@ http://<vps-ip>:8080
 2. 选择要包含的订阅和节点
 3. 设置分组名称
 4. 保存并获取订阅链接
+
+### SubConverter 后端对齐说明
+
+MiSub 通过 SubConverter 后端进行订阅格式转换，核心调用路径为 `/sub`，并基于客户端 User-Agent 或 URL 参数决定输出格式。
+
+支持的常见参数（与 SubConverter 文档一致，使用时需要 URLEncode 的参数会由后端处理）：
+
+- `target`：目标格式（`clash` / `surge&ver=4` / `loon` / `quanx` / `base64`）
+- `url`：订阅链接或节点分享链接（可合并多链接）
+- `config`：远程规则配置（仅对 Clash/Surge/Loon 生效）
+- `scv`：跳过 TLS 证书校验（默认关闭）
+- `udp`：开启 UDP（默认关闭）
+- `emoji`：节点名称 Emoji（按重命名模板自动启用）
+
+MiSub 的几个适配细节：
+
+- `surge` 目标会自动补齐版本为 `surge&ver=4`（可用 `?target=surge&ver=3` 指定版本）。
+- Surge 客户端不识别 `snell://` 订阅链接，建议确保 SubConverter 能输出原生 `snell, server, port, psk=..., version=...` 格式的 Surge 配置。
+- `sing-box` 与 `singbox` 会自动落到 Base64 输出（SubConverter 目前无 sing-box 目标）。
+- `quanx` 需要显式参数（`?quanx` 或 `?target=quanx`）或对应的 User-Agent。
+
+如需检查后端可用性，可在设置页使用“测试可用性”按钮访问 `/api/test_subconverter`。
 
 ### 数据迁移 (KV → D1)
 
