@@ -43,9 +43,11 @@ import {
     handleVpsNodeDetailRequest,
     handleVpsAlertsRequest,
     handleVpsInstallScript,
+    handleVpsUninstallScript,
     handleVpsNetworkTargetsRequest,
     handleVpsNetworkCheck,
-    handleVpsConfig
+    handleVpsConfig,
+    handleVpsPublicNodeDetailRequest
 } from './handlers/vps-monitor-handler.js';
 
 // 常量定义
@@ -172,9 +174,12 @@ export async function handleApiRequest(request, env) {
         return await handleVpsReport(request, env);
     }
 
-    // VPS monitor install script endpoint (public)
+    // VPS monitor install/uninstall script endpoint (public)
     if (path === '/vps/install') {
         return await handleVpsInstallScript(request, env);
+    }
+    if (path === '/vps/uninstall') {
+        return await handleVpsUninstallScript(request, env);
     }
 
     if (path === '/vps/config') {
@@ -184,6 +189,10 @@ export async function handleApiRequest(request, env) {
     if (path === '/vps/public') {
         const { handleVpsPublicSnapshotRequest } = await import('./handlers/vps-monitor-handler.js');
         return await handleVpsPublicSnapshotRequest(request, env);
+    }
+    
+    if (path.startsWith('/vps/public/nodes/')) {
+        return await handleVpsPublicNodeDetailRequest(request, env);
     }
 
     // Public GET access for clients
