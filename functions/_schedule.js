@@ -9,19 +9,22 @@ export async function onRequest(context) {
         return new Response('Not a cron request', { status: 400 });
     }
 
+    const results = {
+        timestamp: new Date().toISOString(),
+        subscriptionSync: null
+    };
+
     try {
         // 执行订阅同步逻辑
-        const result = await performSubscriptionSync(context.env);
-        return new Response(JSON.stringify(result), {
-            headers: { 'Content-Type': 'application/json' }
-        });
+        results.subscriptionSync = await performSubscriptionSync(context.env);
     } catch (error) {
-        console.error('Cron sync failed:', error);
-        return new Response(JSON.stringify({ error: error.message }), {
-            status: 500,
-            headers: { 'Content-Type': 'application/json' }
-        });
+        console.error('Cron subscription sync failed:', error);
+        results.subscriptionSync = { error: error.message };
     }
+
+    return new Response(JSON.stringify(results), {
+        headers: { 'Content-Type': 'application/json' }
+    });
 }
 
 /**
@@ -123,7 +126,7 @@ async function getSubscriptionsToSync(env) {
  * 同步单个订阅
  */
 async function syncSingleSubscription(subscription, env) {
-    const { url, userAgent = 'clash-meta/2.4.0', timeout = 30000 } = subscription;
+    const { url, userAgent = 'clash-meta/2.5.0', timeout = 30000 } = subscription;
 
     console.log(`[Cron Sync] Syncing subscription: ${subscription.name}`);
 
