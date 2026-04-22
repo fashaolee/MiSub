@@ -11,7 +11,7 @@ export const DEFAULT_SETTINGS = {
     transformConfig: '',
     ruleLevel: 'std',
     builtinSkipCertVerify: false,
-    builtinEnableUdp: false,
+    builtinEnableUdp: true,
     builtinLoonSkipCertVerify: false,
     enableAccessLog: false,
     accessLogPersistenceMode: 'light',
@@ -95,6 +95,27 @@ prependGroupName: false
             sort: false,
             list: false
         }
+    },
+    // 自定义公开页
+    customPage: {
+        enabled: false,
+        type: 'html',
+        content: '',
+        css: '',
+        iframeUrl: '',
+        iframeHeight: '100vh',
+        iframeFullWidth: true,
+        iframeAllowFullscreen: true,
+        iframeFillViewport: false,
+        iframePaddingY: '0px',
+        iframeRadius: '0px',
+        iframeShadow: false,
+        useDefaultLayout: true,
+        allowExternalStylesheets: false,
+        allowScripts: false,
+        hideBranding: false,
+        hideHeader: false,
+        hideFooter: false
     }
 };
 

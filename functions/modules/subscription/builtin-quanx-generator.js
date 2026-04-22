@@ -18,7 +18,9 @@ function cleanControlChars(str) {
 function sanitizeNodeName(name) {
     if (!name) return 'Untitled';
     let safe = cleanControlChars(name);
-    safe = safe.replace(/,/g, ' ').replace(/=/g, '-');
+    // QuanX lines are comma-separated and uses = for key-value. 
+    // Semicolons and quotes can also be problematic in some versions.
+    safe = safe.replace(/,/g, ' ').replace(/=/g, '-').replace(/;/g, ' ').replace(/["']/g, '');
     safe = safe.replace(/\s+/g, ' ').trim();
     return safe || 'Untitled';
 }
@@ -225,6 +227,9 @@ export function generateBuiltinQuanxConfig(nodeList, options = {}) {
     // 转换为 Clash 代理对象
     const proxies = urlsToClashProxies(nodeUrls, options);
 
+    // 应用 UDP 开关
+    // (已在 urlsToClashProxies 中全局处理)
+    
     for (const clashProxy of proxies) {
         const baseName = sanitizeNodeName(clashProxy.name);
         clashProxy.name = getUniqueName(baseName, usedNames);

@@ -742,8 +742,9 @@ function adaptLegacyTransform(config) {
             params: { 
                 template: { 
                     enabled: true, 
-                    text: template.template || '{emoji}{region}-{protocol}-{index}', 
-                    offset: template.indexStart || 1 
+                    template: template.template || '{emoji}{region}-{protocol}-{index}', 
+                    offset: template.indexStart || 1,
+                    indexScope: template.indexScope || 'region'
                 } 
             } 
         });

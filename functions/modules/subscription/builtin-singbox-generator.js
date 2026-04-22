@@ -214,7 +214,7 @@ function buildOutbound(proxy) {
         outbound.tls.enabled = true;
         outbound.tls.insecure = true;
     }
-    if (proxy.sni || proxy.servername) {
+    if ((proxy.sni || proxy.servername) && (type !== 'ss' && type !== 'shadowsocks' || proxy.tls || outbound.tls?.enabled)) {
         outbound.tls = outbound.tls || {};
         outbound.tls.server_name = proxy.sni || proxy.servername;
     }
@@ -252,6 +252,9 @@ export function generateBuiltinSingboxConfig(nodeList, options = {}) {
 
     const proxies = urlsToClashProxies(nodeUrls, options);
 
+    // 应用 UDP 开关
+    // (已在 urlsToClashProxies 中全局处理)
+    
     for (const clashProxy of proxies) {
         const baseName = sanitizeName(clashProxy.name);
         clashProxy.name = getUniqueName(baseName, usedNames);
