@@ -9,7 +9,7 @@ import { resolveRequestContext } from './request-context.js';
 import { resolveNodeListWithCache } from './cache-manager.js';
 import { ProcessorService } from '../../services/processor-service.js';
 import { logAccessSuccess, shouldSkipLogging as shouldSkipAccessLog } from './access-logger.js';
-import { isBrowserAgent, determineTargetFormat, isMetaCore } from './user-agent-utils.js'; // [Added] Import centralized util
+import { isBrowserAgent, determineTargetFormat, isMetaCore, isHiddifyAgent } from './user-agent-utils.js'; // [Added] Import centralized util
 import { authMiddleware } from '../auth-middleware.js';
 import { transformBuiltinSubscription } from './transformer-factory.js';
 import { fetchTransformTemplate } from './transform-template-cache.js';
@@ -113,6 +113,62 @@ export function resolveExternalTemplateConfigUrl(templateSource) {
     return templateSource.kind === 'remote' ? String(templateSource.value || '').trim() : '';
 }
 
+export function resolveBuiltinEngineFlags(config = {}, isExternalMode = false) {
+    if (isExternalMode) {
+        return {
+            shouldSkipCertificateVerify: false,
+            shouldEnableUdp: false
+        };
+    }
+
+    return {
+        shouldSkipCertificateVerify: Boolean(config.builtinSkipCertVerify),
+        shouldEnableUdp: Boolean(config.builtinEnableUdp)
+    };
+}
+
+export function resolveEffectiveEngine({
+    searchParams,
+    userAgent = '',
+    profileEngineMode = '',
+    globalEngineMode = ''
+} = {}) {
+    const params = searchParams || new URLSearchParams('');
+    const builtinParam = (params.get('builtin') || '').toLowerCase();
+    const engineParam = (params.get('engine') || '').toLowerCase();
+    const hasExplicitFormat = Boolean(
+        params.get('target') ||
+        params.has('clash') ||
+        params.has('singbox') ||
+        params.has('surge') ||
+        params.has('loon') ||
+        params.has('quanx') ||
+        params.has('egern') ||
+        params.has('base64') ||
+        params.has('v2ray') ||
+        params.has('trojan') ||
+        params.has('nodes')
+    );
+
+    if (engineParam) return engineParam;
+    if (builtinParam === 'external') return 'external';
+    if (builtinParam === 'true' || builtinParam === '1' || builtinParam === 'builtin') return 'builtin';
+
+    if (!hasExplicitFormat && isHiddifyAgent(userAgent)) {
+        return 'builtin';
+    }
+
+    return profileEngineMode || globalEngineMode || 'builtin';
+}
+
+export function resolveBuiltinRequestOptions({ searchParams, userAgent = '' } = {}) {
+    return {
+        userAgent,
+        searchParams: searchParams || new URLSearchParams(''),
+        hiddifyCompatible: isHiddifyAgent(userAgent)
+    };
+}
+
 /**
  * 处理MiSub订阅请求
  * @param {Object} context - Cloudflare上下文
@@ -127,6 +183,7 @@ export async function handleMisubRequest(context) {
     console.log(`[MiSub UA] ${userAgentHeader}`);
 
     const storageAdapter = StorageFactory.createAdapter(env, await StorageFactory.getStorageType(env));
+    context.storage = storageAdapter;
     const [settingsData, allMisubs, allProfiles] = await Promise.all([
         storageAdapter.get(KV_KEY_SETTINGS),
         storageAdapter.getAllSubscriptions(),
@@ -269,9 +326,6 @@ export async function handleMisubRequest(context) {
         targetMisubs = allMisubs.filter(s => s.enabled);
     }
 
-    const shouldSkipCertificateVerify = Boolean(config.builtinSkipCertVerify);
-    const shouldEnableUdp = Boolean(config.builtinEnableUdp);
-
     // 使用统一的确定目标格式的方法（此方法中包含了处理各类客户端如 Surge 等对应版本的最新支持规则）
     let targetFormat = determineTargetFormat(userAgentHeader, url.searchParams);
 
@@ -308,14 +362,16 @@ export async function handleMisubRequest(context) {
     const profileSub = currentProfile?.subconverter || {};
     const globalSub = config.subconverter || {};
     
-    const builtinParam = (url.searchParams.get('builtin') || '').toLowerCase();
-    const engineParam = (url.searchParams.get('engine') || '').toLowerCase();
     // [Optimization] Respect user defined engine mode while preventing loops for non-browser agents (backend fetchers)
-    const defaultEngineMode = profileSub.engineMode || globalSub.engineMode || 'builtin';
-    
-    const effectiveEngine = engineParam || (builtinParam === 'external' ? 'external' : (builtinParam === 'true' ? 'builtin' : '')) || defaultEngineMode;
+    const effectiveEngine = resolveEffectiveEngine({
+        searchParams: url.searchParams,
+        userAgent: userAgentHeader,
+        profileEngineMode: profileSub.engineMode,
+        globalEngineMode: globalSub.engineMode
+    });
     const isExternalMode = effectiveEngine === 'external';
     const useBuiltin = !isExternalMode;
+    const { shouldSkipCertificateVerify, shouldEnableUdp } = resolveBuiltinEngineFlags(config, isExternalMode);
 
     
     const globalTemplateUrl = resolveTemplateUrl(config.transformConfigMode, config.transformConfig, '');
@@ -412,7 +468,9 @@ export async function handleMisubRequest(context) {
             name: subName,
             operators: Array.isArray(activeProfile?.operators) ? [...activeProfile.operators] : [],
             exclude: urlExclude || activeProfile?.exclude,
-            include: urlInclude || activeProfile?.include
+            include: urlInclude || activeProfile?.include,
+            // [Issue #345] 透传 emoji 开关到内置生成器
+            addFlagEmoji: effectiveNodeTransform.addFlagEmoji
         };
 
         // [Subconverter API] 动态注入更名算子 (rename=old@new|A@B)
@@ -527,10 +585,12 @@ export async function handleMisubRequest(context) {
         const dataSourceUrl = new URL(request.url);
         
         // [加固] 彻底清理 URL 参数，防止参数污染导致后端返回 400 错误
-        // [优化] 不再强制注入 target=nodes，因为非浏览器请求已默认使用内置引擎
-        // [关键] 显式注入 builtin=true 确保后端拉取数据时强制走内置逻辑，打破重定向环
+        // [关键] 后端 converter 拉取数据源时必须拿到明文节点列表；否则未知 UA 会回退 base64，
+        // 第三方转换后端再按 Clash/Loon 等目标解析时会出现空订阅或拉取失败。
+        // 同时显式注入 builtin=true，确保数据源请求强制走内置节点导出逻辑，打破重定向环。
         const paramsToClear = ['target', 'engine', 'builtin', 'clash', 'singbox', 'surge', 'loon', 'quanx', 'egern', 'base64', 'v2ray', 'trojan', 'list', 'include', 'exclude'];
         paramsToClear.forEach(p => dataSourceUrl.searchParams.delete(p));
+        dataSourceUrl.searchParams.set('target', 'nodes');
         dataSourceUrl.searchParams.set('builtin', 'true');
 
         // [关键修复] 确保后端拉取数据时包含身份令牌
@@ -652,6 +712,7 @@ export async function handleMisubRequest(context) {
     const finalEnableTfo = urlTfo === 'true' || urlTfo === '1';
 
     const builtinOptions = {
+        ...resolveBuiltinRequestOptions({ searchParams: url.searchParams, userAgent: userAgentHeader }),
         fileName: subName,
         managedConfigUrl: '',
         interval: config.UpdateInterval || 86400,

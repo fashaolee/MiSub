@@ -31,10 +31,9 @@ function buildProxyLine(proxy) {
             extras.push(`obfs=${proxy.obfs || opts.mode}`);
             if (proxy['obfs-host'] || opts.host) extras.push(`obfs-host=${proxy['obfs-host'] || opts.host}`);
         } else if (plugin === 'v2ray-plugin' || opts.mode === 'websocket') {
-            extras.push('obfs=ws');
+            extras.push((opts.tls || opts.mode === 'websocket-tls') ? 'obfs=wss' : 'obfs=ws');
             if (opts.path) extras.push(`obfs-uri=${opts.path}`);
             if (opts.host) extras.push(`obfs-host=${opts.host}`);
-            if (opts.tls || opts.mode === 'websocket-tls') extras.push('over-tls=true');
         }
         if (proxy.udp) extras.push('udp-relay=true');
         return `shadowsocks=${server}:${port}, method=${proxy.cipher || 'aes-128-gcm'}, password=${proxy.password || ''}${extras.length ? `, ${extras.join(', ')}` : ''}, tag=${name}`;
@@ -89,7 +88,8 @@ function buildProxyLine(proxy) {
         if (proxy.password) extras.push(proxy.password || '');
         const sni = proxy.servername ?? proxy.sni;
         if (sni !== undefined) extras.push(`sni=${sni}`);
-        if (proxy['congestion-control']) extras.push(`congestion-controller=${proxy['congestion-control']}`);
+        const congestionControl = proxy['congestion-control'] || proxy['congestion-controller'];
+        if (congestionControl) extras.push(`congestion-controller=${congestionControl}`);
         if (proxy['udp-relay-mode']) extras.push(`udp-relay=${proxy['udp-relay-mode']}`);
         if (proxy.alpn) {
             const alpn = Array.isArray(proxy.alpn) ? proxy.alpn.join(',') : proxy.alpn;
@@ -167,6 +167,17 @@ export function renderQuanxFromTemplateModel(model, options = {}) {
     const localRules = normalizedModel.rules.filter(r => !remoteRules.includes(r));
 
     return [
+        '[general]',
+        '; 监听端口',
+        'network_check_url=http://www.gstatic.com/generate_204',
+        'server_check_url=http://www.gstatic.com/generate_204',
+        '',
+        '[dns]',
+        '; 优先解析 IPv4',
+        'prefer-ipv4=true',
+        'server=223.5.5.5',
+        'server=114.114.114.114',
+        '',
         '[server_local]',
         ...proxies.map(buildProxyLine).filter(Boolean),
         '',
