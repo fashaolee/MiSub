@@ -45,22 +45,17 @@ function buildOutbound(proxy) {
         outbound.password = proxy.password || '';
         if (proxy.udp) outbound.udp_over_tcp = false;
 
-        // 插件支持 (v2ray-plugin 映射为 Sing-box transport)
+        // sing-box 的 Shadowsocks 出站使用 SIP003 plugin/plugin_opts；
+        // `transport` 仅属于 V2Ray 传输协议，SFA 会严格拒绝它。
         const plugin = proxy.plugin || '';
         const opts = proxy['plugin-opts'] || proxy.pluginOpts || {};
         if (plugin === 'v2ray-plugin' || opts.mode === 'websocket') {
-            outbound.transport = {
-                type: 'ws',
-                path: opts.path || '/',
-                headers: opts.host ? { Host: opts.host } : {}
-            };
-            if (opts.tls || opts.mode === 'websocket-tls') {
-                outbound.tls = {
-                    enabled: true,
-                    server_name: opts.host || server,
-                    insecure: !!proxy['skip-cert-verify']
-                };
-            }
+            outbound.plugin = 'v2ray-plugin';
+            const pluginOptions = ['mode=websocket'];
+            if (opts.host) pluginOptions.push(`host=${opts.host}`);
+            if (opts.path) pluginOptions.push(`path=${opts.path}`);
+            if (opts.tls || opts.mode === 'websocket-tls') pluginOptions.push('tls');
+            outbound.plugin_opts = pluginOptions.join(';');
         }
     } else if (type === 'vmess') {
         outbound.type = 'vmess';
@@ -286,7 +281,7 @@ export function generateBuiltinSingboxConfig(nodeList, options = {}) {
     const levelKey = (ruleLevel || 'std').toUpperCase();
     // 获取内置策略组
     const policyGroupsFactory = POLICY_GROUPS[levelKey] || POLICY_GROUPS.STD;
-    let proxyGroups = policyGroupsFactory(outbounds);
+    let proxyGroups = policyGroupsFactory(outbounds, options);
     proxyGroups = pruneProxyGroups(proxyGroups, outbounds);
 
     if (levelKey === 'RELAY') {
@@ -356,11 +351,21 @@ export function generateBuiltinSingboxConfig(nodeList, options = {}) {
         dns: {
             strategy: 'prefer_ipv4',
             servers: [
-                { tag: 'dns-ali', address: '223.5.5.5', detour: 'DIRECT' },
-                { tag: 'dns-google', address: '8.8.8.8', detour: DEFAULT_SELECT_GROUP },
-                { tag: 'doh-cloudflare', address: 'https://1.1.1.1/dns-query', detour: DEFAULT_SELECT_GROUP }
+                { tag: 'dns-ali', type: 'udp', server: '223.5.5.5', server_port: 53, detour: 'DIRECT' },
+                { tag: 'dns-google', type: 'udp', server: '8.8.8.8', server_port: 53, detour: DEFAULT_SELECT_GROUP },
+                { tag: 'doh-cloudflare', type: 'https', server: '1.1.1.1', server_port: 443, path: '/dns-query', detour: DEFAULT_SELECT_GROUP }
             ]
         },
+        inbounds: [
+            {
+                type: 'tun',
+                tag: 'tun-in',
+                address: ['172.19.0.1/30'],
+                auto_route: true,
+                strict_route: true,
+                stack: 'mixed'
+            }
+        ],
         outbounds: [
             { tag: 'DIRECT', type: 'direct' },
             { tag: 'REJECT', type: 'block' },
