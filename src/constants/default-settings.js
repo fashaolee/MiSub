@@ -9,6 +9,7 @@ export const DEFAULT_SETTINGS = {
     FileName: 'MiSub',
     mytoken: 'auto',
     profileToken: 'profiles',
+    defaultLocale: 'zh-CN',
     transformConfigMode: 'builtin',
     transformConfig: '',
     ruleLevel: 'std',
@@ -128,6 +129,7 @@ prependGroupName: false
         }
     },
     // 自定义公开页
+    customDnsOverride: '',
     customPage: {
         enabled: false,
         type: 'html',

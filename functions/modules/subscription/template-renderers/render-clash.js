@@ -61,6 +61,36 @@ const ACL4SSR_ROOT_LIST_ONLY_FILES = new Set([
     'unban'
 ]);
 
+// 解析用户提供的 DNS 覆写片段（支持 JSON 和 YAML），解析失败返回 null
+function parseDnsOverride(raw) {
+    if (!raw || typeof raw !== 'string' || !raw.trim()) return null;
+    try {
+        const trimmed = raw.trim();
+        let parsed;
+        if (/^\{/.test(trimmed)) {
+            parsed = JSON.parse(trimmed);
+        } else {
+            parsed = yaml.load(trimmed);
+        }
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            // 如果 YAML 解析结果包含 dns 顶层键，取 dns 的值
+            if (parsed.dns && typeof parsed.dns === 'object' && !Array.isArray(parsed.dns)) {
+                return parsed.dns;
+            }
+            return parsed;
+        }
+    } catch {
+        // 忽略解析错误，回退到默认
+    }
+    return null;
+}
+
+// 合并用户 DNS 覆写：有覆写则完全替换，无覆写则用默认
+function mergeDnsConfig(defaultDns, override) {
+    if (!override) return defaultDns;
+    return override;
+}
+
 function toClashRuleProviderUrl(sourceUrl) {
     if (!/^https?:\/\//i.test(String(sourceUrl || ''))) return sourceUrl;
 
@@ -158,24 +188,46 @@ export function renderClashFromTemplateModel(model) {
         };
     });
 
+    const dnsOverride = parseDnsOverride(normalizedModel.settings?.customDnsOverride);
+
+    const defaultDns = {
+        'enable': true,
+        'ipv6': true,
+        'enhanced-mode': 'fake-ip',
+        'fake-ip-range': '198.18.0.1/16',
+        'fake-ip-filter': [
+            'geosite:private',
+            'geosite:category-ntp'
+        ],
+        'use-hosts': false,
+        'use-system-hosts': false,
+        'nameserver': [
+            'https://1.1.1.1/dns-query',
+            'https://8.8.8.8/dns-query'
+        ],
+        'proxy-server-nameserver': [
+            'https://223.5.5.5/dns-query',
+            'https://223.6.6.6/dns-query'
+        ],
+        'nameserver-policy': {
+            'geosite:cn': [
+                'https://223.5.5.5/dns-query',
+                'https://223.6.6.6/dns-query'
+            ]
+        },
+        'respect-rules': true
+    };
+
     const config = {
         'mixed-port': 7890,
+        'socks-port': 7891,
         'allow-lan': true,
+        'bind-address': '*',
+        'ipv6': true,
         'mode': 'rule',
         'log-level': 'info',
         'external-controller': ':9090',
-        'dns': {
-            'enable': true,
-            'listen': '0.0.0.0:1053',
-            'default-nameserver': ['223.5.5.5', '1.1.1.1'],
-            'enhanced-mode': 'fake-ip',
-            'fake-ip-range': '198.18.0.1/16',
-            'fake-ip-filter': ['*.lan', '*.localhost'],
-            'nameserver': [
-                'https://dns.alidns.com/dns-query',
-                'https://doh.pub/dns-query'
-            ]
-        },
+        'dns': mergeDnsConfig(defaultDns, dnsOverride),
         'proxies': normalizedModel.proxies,
         'proxy-groups': normalizedModel.groups
             .filter(group =>
